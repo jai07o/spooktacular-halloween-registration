@@ -6,7 +6,7 @@
 
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.SESSION_SECRET || 'spooktacular-secret-jwt-key-2026';
+const JWT_SECRET = process.env.JWT_SECRET || process.env.ADMIN_JWT_SECRET || process.env.SESSION_SECRET || 'spooktacular-secret-jwt-key-2026';
 
 function extractToken(req) {
   if (req.cookies && req.cookies.admin_token) {
