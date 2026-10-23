@@ -1,0 +1,14 @@
+# Vercel Deployment Ignore
+.git
+.github
+*.log
+*.db
+*.db-shm
+*.db-wal
+server/data/
+server/tests/
+server/scripts/
+backups/
+.vscode/
+.idea/
+.DS_Store
