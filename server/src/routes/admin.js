@@ -5,7 +5,9 @@
  */
 
 const express = require('express');
-const bcrypt = require('bcrypt');
+const bcrypt = (() => {
+  try { return require('bcryptjs'); } catch (e) { return require('bcrypt'); }
+})();
 const jwt = require('jsonwebtoken');
 const { body, query, validationResult } = require('express-validator');
 const { getDb } = require('../db/database');

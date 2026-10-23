@@ -82,7 +82,9 @@ if (!isSupabaseConfigured()) {
       const adminPass = process.env.ADMIN_PASSWORD || 'SpookyAdmin2026!';
       const adminUser = process.env.ADMIN_USERNAME || 'admin';
       if (adminCount && adminCount.count === 0) {
-        const bcrypt = require('bcrypt');
+        const bcrypt = (() => {
+          try { return require('bcryptjs'); } catch (e) { return require('bcrypt'); }
+        })();
         const hash = bcrypt.hashSync(adminPass, 10);
         db.prepare('INSERT INTO admin_users (username, email, password_hash, role) VALUES (?, ?, ?, ?)')
           .run(

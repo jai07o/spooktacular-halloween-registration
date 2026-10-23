@@ -3,10 +3,13 @@ const fs = require('fs');
 const { isSupabaseConfigured, getSupabase } = require('./supabase');
 
 let Database = null;
-try {
-  Database = require('better-sqlite3');
-} catch (e) {
-  // Better-sqlite3 is optional in production environments running Supabase
+if (!isSupabaseConfigured()) {
+  try {
+    const sqliteMod = 'better-sqlite3';
+    Database = require(sqliteMod);
+  } catch (e) {
+    // Better-sqlite3 is optional in production environments running Supabase
+  }
 }
 
 let db = null;
