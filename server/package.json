@@ -4,6 +4,7 @@
   "description": "Backend server for Spooktacular Halloween Party",
   "main": "src/index.js",
   "scripts": {
+    "build": "node -e \"console.log('Server ready')\"",
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "test": "jest --forceExit --detectOpenHandles",
