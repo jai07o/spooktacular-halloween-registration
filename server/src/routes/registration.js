@@ -194,28 +194,47 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
         .from('tickets')
         .select(`
           *,
-          registrations (full_name, participant_count, status)
+          registrations (id, full_name, phone, place, participant_count, status)
         `)
         .eq('ticket_number', queryTerm)
         .maybeSingle();
 
       if (!ticketData) {
-        // Also look up by registration_id in case user entered registration ID
+        // Look up by registration_id
         const { data: byReg } = await supabase
           .from('tickets')
           .select(`
             *,
-            registrations (full_name, participant_count, status)
+            registrations (id, full_name, phone, place, participant_count, status)
           `)
           .eq('registration_id', queryTerm)
           .maybeSingle();
         ticketData = byReg;
       }
 
+      if (!ticketData) {
+        // Look up by phone number
+        const { data: byPhone } = await supabase
+          .from('tickets')
+          .select(`
+            *,
+            registrations!inner (id, full_name, phone, place, participant_count, status)
+          `)
+          .eq('registrations.phone', queryTerm)
+          .eq('is_valid', true)
+          .order('issued_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        ticketData = byPhone;
+      }
+
       if (ticketData) {
         ticket = {
           ...ticketData,
+          registration_id: ticketData.registration_id || ticketData.registrations?.id,
           full_name: ticketData.registrations?.full_name,
+          phone: ticketData.registrations?.phone,
+          place: ticketData.registrations?.place,
           participant_count: ticketData.registrations?.participant_count,
           reg_status: ticketData.registrations?.status
         };
@@ -223,11 +242,13 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
     } else {
       const db = getDb();
       ticket = db.prepare(`
-        SELECT t.*, r.full_name, r.participant_count, r.status as reg_status
+        SELECT t.*, r.id as registration_id, r.full_name, r.phone, r.place, r.participant_count, r.status as reg_status
         FROM tickets t
         JOIN registrations r ON r.id = t.registration_id
-        WHERE t.ticket_number = ? OR t.registration_id = ?
-      `).get(queryTerm, queryTerm);
+        WHERE t.ticket_number = ? OR t.registration_id = ? OR r.phone = ?
+        ORDER BY t.issued_at DESC
+        LIMIT 1
+      `).get(queryTerm, queryTerm, queryTerm);
     }
 
     if (!ticket) {
@@ -239,6 +260,7 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
         valid: false,
         message: 'This ticket has been cancelled or revoked by administration.',
         ticketNumber: ticket.ticket_number,
+        registrationId: ticket.registration_id,
         status: 'CANCELLED'
       });
     }
@@ -248,6 +270,7 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
         valid: false,
         message: 'Ticket payment has not been confirmed.',
         ticketNumber: ticket.ticket_number,
+        registrationId: ticket.registration_id,
         status: ticket.reg_status
       });
     }
@@ -255,7 +278,10 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
     res.json({
       valid: true,
       ticketNumber: ticket.ticket_number,
+      registrationId: ticket.registration_id,
       name: ticket.full_name,
+      phone: ticket.phone,
+      place: ticket.place,
       participants: ticket.participant_count,
       status: ticket.reg_status,
       issuedAt: ticket.issued_at

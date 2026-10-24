@@ -53,13 +53,13 @@ export default function TicketValidator() {
         <form onSubmit={(e) => { e.preventDefault(); handleValidate(); }}>
           <div className="form-group">
             <label className="form-label" htmlFor="ticketNumberInput">
-              Ticket Number
+              Ticket Number, Registration ID, or Phone
             </label>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <input
                 id="ticketNumberInput"
                 type="text"
-                placeholder="e.g. SPOOK-2026-A1B2C"
+                placeholder="e.g. SPH-2026-EE70DDEA, SPH-20261024-XXXXXX, or Phone"
                 value={ticketInput}
                 onChange={(e) => setTicketInput(e.target.value)}
                 className="form-input"
@@ -105,7 +105,7 @@ export default function TicketValidator() {
               {result.valid ? 'VALID ENTRY TICKET' : 'INVALID TICKET'}
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-              {result.valid ? 'This pass is legitimate and authorized for event entry.' : (result.message || 'No active registration found for this ticket number.')}
+              {result.valid ? 'This pass is legitimate and authorized for event entry.' : (result.message || 'No active registration found for this query.')}
             </p>
           </div>
 
@@ -122,15 +122,36 @@ export default function TicketValidator() {
               <span style={{ color: 'var(--text-muted)' }}>Ticket No:</span>
               <strong style={{ color: 'var(--text-accent)' }}>{result.ticketNumber}</strong>
 
+              {result.registrationId && (
+                <>
+                  <span style={{ color: 'var(--text-muted)' }}>Reg ID:</span>
+                  <strong style={{ color: '#9ca3af', fontFamily: 'monospace' }}>{result.registrationId}</strong>
+                </>
+              )}
+
               <span style={{ color: 'var(--text-muted)' }}>Attendee Name:</span>
               <strong style={{ color: 'var(--text-white)' }}>{result.name}</strong>
+
+              {result.phone && (
+                <>
+                  <span style={{ color: 'var(--text-muted)' }}>Phone:</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{result.phone}</span>
+                </>
+              )}
+
+              {result.place && (
+                <>
+                  <span style={{ color: 'var(--text-muted)' }}>Location:</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{result.place}</span>
+                </>
+              )}
 
               <span style={{ color: 'var(--text-muted)' }}>Entry Allowance:</span>
               <span><strong>{result.participants}</strong> Person{result.participants > 1 ? 's' : ''}</span>
 
               <span style={{ color: 'var(--text-muted)' }}>Registration Status:</span>
               <span style={{
-                color: result.status === 'APPROVED' ? 'var(--status-approved)' : 'var(--status-pending)',
+                color: result.status === 'APPROVED' || result.status === 'PAYMENT_VERIFIED' ? 'var(--status-approved)' : 'var(--status-pending)',
                 fontWeight: 700
               }}>
                 {result.status}
