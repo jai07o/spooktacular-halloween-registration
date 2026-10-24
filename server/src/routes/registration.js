@@ -186,16 +186,31 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
   try {
     let ticket = null;
 
+    const queryTerm = (req.params.ticketNumber || '').trim();
+
     if (isSupabaseConfigured()) {
       const supabase = getSupabase();
-      const { data: ticketData } = await supabase
+      let { data: ticketData } = await supabase
         .from('tickets')
         .select(`
           *,
           registrations (full_name, participant_count, status)
         `)
-        .eq('ticket_number', req.params.ticketNumber)
+        .eq('ticket_number', queryTerm)
         .maybeSingle();
+
+      if (!ticketData) {
+        // Also look up by registration_id in case user entered registration ID
+        const { data: byReg } = await supabase
+          .from('tickets')
+          .select(`
+            *,
+            registrations (full_name, participant_count, status)
+          `)
+          .eq('registration_id', queryTerm)
+          .maybeSingle();
+        ticketData = byReg;
+      }
 
       if (ticketData) {
         ticket = {
@@ -211,8 +226,8 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
         SELECT t.*, r.full_name, r.participant_count, r.status as reg_status
         FROM tickets t
         JOIN registrations r ON r.id = t.registration_id
-        WHERE t.ticket_number = ?
-      `).get(req.params.ticketNumber);
+        WHERE t.ticket_number = ? OR t.registration_id = ?
+      `).get(queryTerm, queryTerm);
     }
 
     if (!ticket) {

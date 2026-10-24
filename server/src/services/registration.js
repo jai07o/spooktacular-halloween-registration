@@ -137,13 +137,13 @@ class RegistrationService {
       if (error || !reg) return null;
 
       // Extract latest ticket and submission
-      const latestTicket = reg.tickets && reg.tickets.length > 0
-        ? reg.tickets.sort((a, b) => new Date(b.issued_at) - new Date(a.issued_at))[0]
-        : null;
+      const latestTicket = Array.isArray(reg.tickets)
+        ? (reg.tickets.length > 0 ? reg.tickets.sort((a, b) => new Date(b.issued_at) - new Date(a.issued_at))[0] : null)
+        : (reg.tickets || null);
 
-      const latestSub = reg.payment_submissions && reg.payment_submissions.length > 0
-        ? reg.payment_submissions.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))[0]
-        : null;
+      const latestSub = Array.isArray(reg.payment_submissions)
+        ? (reg.payment_submissions.length > 0 ? reg.payment_submissions.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))[0] : null)
+        : (reg.payment_submissions || null);
 
       return {
         ...reg,
@@ -192,13 +192,13 @@ class RegistrationService {
 
       if (error || !reg) return null;
 
-      const latestTicket = reg.tickets && reg.tickets.length > 0
-        ? reg.tickets.sort((a, b) => new Date(b.issued_at) - new Date(a.issued_at))[0]
-        : null;
+      const latestTicket = Array.isArray(reg.tickets)
+        ? (reg.tickets.length > 0 ? reg.tickets.sort((a, b) => new Date(b.issued_at) - new Date(a.issued_at))[0] : null)
+        : (reg.tickets || null);
 
-      const latestSub = reg.payment_submissions && reg.payment_submissions.length > 0
-        ? reg.payment_submissions.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))[0]
-        : null;
+      const latestSub = Array.isArray(reg.payment_submissions)
+        ? (reg.payment_submissions.length > 0 ? reg.payment_submissions.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))[0] : null)
+        : (reg.payment_submissions || null);
 
       return {
         ...reg,
@@ -279,12 +279,12 @@ class RegistrationService {
       }
 
       const rows = (data || []).map(r => {
-        const latestTicket = r.tickets && r.tickets.length > 0
-          ? r.tickets.sort((a, b) => new Date(b.issued_at) - new Date(a.issued_at))[0]
-          : null;
-        const latestSub = r.payment_submissions && r.payment_submissions.length > 0
-          ? r.payment_submissions.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))[0]
-          : null;
+        const latestTicket = Array.isArray(r.tickets)
+          ? (r.tickets.length > 0 ? r.tickets.sort((a, b) => new Date(b.issued_at) - new Date(a.issued_at))[0] : null)
+          : (r.tickets || null);
+        const latestSub = Array.isArray(r.payment_submissions)
+          ? (r.payment_submissions.length > 0 ? r.payment_submissions.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))[0] : null)
+          : (r.payment_submissions || null);
 
         return {
           ...r,
