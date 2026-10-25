@@ -100,7 +100,7 @@ Follow these step-by-step instructions to deploy the application to production.
 
 1. In your Supabase dashboard, click **SQL Editor** from the left navigation.
 2. Click **"New query"**.
-3. Open the file [`supabase/migrations/20261023000000_create_spooktacular_schema.sql`](supabase/migrations/20261023000000_create_spooktacular_schema.sql) (or [`supabase/schema.sql`](supabase/schema.sql)) from this repository.
+3. Open the file [`supabase/schema.sql`](supabase/schema.sql) from this repository.
 4. Paste the entire SQL content into the Supabase SQL editor.
 5. Click **"Run"** (or press Ctrl+Enter).
 6. Verify in the output that all tables, indexes, stored procedures, and RLS policies are created successfully:
