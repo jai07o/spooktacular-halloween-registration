@@ -53,6 +53,29 @@ export default function AdminDashboard() {
 
   const [feedbackMessage, setFeedbackMessage] = useState(null);
 
+  // Helper to format ISO dates to readable Date & Time (e.g. 25 Oct 2026, 03:45:12 PM)
+  const formatDateTime = (dateStr) => {
+    if (!dateStr) return { date: '—', time: '', full: '—' };
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return { date: String(dateStr), time: '', full: String(dateStr) };
+      const date = d.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+      const time = d.toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+      return { date, time, full: `${date} at ${time}` };
+    } catch {
+      return { date: String(dateStr), time: '', full: String(dateStr) };
+    }
+  };
+
   // Check auth
   useEffect(() => {
     api.adminMe()
@@ -824,6 +847,7 @@ export default function AdminDashboard() {
                           <thead>
                             <tr style={{ color: '#9ca3af', borderBottom: '1px solid #2a2a3e' }}>
                               <th style={{ padding: '0.5rem' }}>Reg ID</th>
+                              <th style={{ padding: '0.5rem' }}>Registered At</th>
                               <th style={{ padding: '0.5rem' }}>Registrant</th>
                               <th style={{ padding: '0.5rem' }}>Phone</th>
                               <th style={{ padding: '0.5rem' }}>Amount</th>
@@ -837,6 +861,10 @@ export default function AdminDashboard() {
                               <tr key={r.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                                 <td style={{ padding: '0.5rem', fontFamily: 'monospace' }}>
                                   {r.id} {rIdx === 0 && <span style={{ color: '#10b981', fontSize: '0.7rem' }}>(Earliest)</span>}
+                                </td>
+                                <td style={{ padding: '0.5rem', whiteSpace: 'nowrap' }}>
+                                  <div style={{ color: '#f3f4f6', fontWeight: 600 }}>{formatDateTime(r.created_at || r.submitted_at).date}</div>
+                                  <div style={{ color: '#9ca3af', fontSize: '0.72rem', fontFamily: 'monospace' }}>{formatDateTime(r.created_at || r.submitted_at).time}</div>
                                 </td>
                                 <td style={{ padding: '0.5rem', fontWeight: 600 }}>{r.full_name}</td>
                                 <td style={{ padding: '0.5rem', color: '#9ca3af' }}>{r.phone}</td>
@@ -891,6 +919,7 @@ export default function AdminDashboard() {
                     <thead>
                       <tr style={{ color: '#9ca3af', borderBottom: '1px solid #2a2a3e' }}>
                         <th style={{ padding: '0.6rem' }}>Reg ID</th>
+                        <th style={{ padding: '0.6rem' }}>Registered At</th>
                         <th style={{ padding: '0.6rem' }}>Registrant</th>
                         <th style={{ padding: '0.6rem' }}>Phone</th>
                         <th style={{ padding: '0.6rem' }}>Amount</th>
@@ -902,6 +931,10 @@ export default function AdminDashboard() {
                       {duplicateScan.flaggedForReview.map(r => (
                         <tr key={r.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                           <td style={{ padding: '0.6rem', fontFamily: 'monospace' }}>{r.id}</td>
+                          <td style={{ padding: '0.6rem', whiteSpace: 'nowrap' }}>
+                            <div style={{ color: '#f3f4f6', fontWeight: 600 }}>{formatDateTime(r.created_at).date}</div>
+                            <div style={{ color: '#9ca3af', fontSize: '0.74rem', fontFamily: 'monospace' }}>{formatDateTime(r.created_at).time}</div>
+                          </td>
                           <td style={{ padding: '0.6rem', fontWeight: 600 }}>{r.full_name}</td>
                           <td style={{ padding: '0.6rem', color: '#9ca3af' }}>{r.phone}</td>
                           <td style={{ padding: '0.6rem', color: '#ff8c33', fontWeight: 700 }}>₹{r.total_amount}</td>
@@ -1098,6 +1131,7 @@ export default function AdminDashboard() {
               <thead>
                 <tr style={{ background: '#11111a', borderBottom: '1px solid #1f1f2e', color: '#9ca3af' }}>
                   <th style={{ padding: '0.85rem 1rem' }}>Reg ID</th>
+                  <th style={{ padding: '0.85rem 1rem' }}>Registered At</th>
                   <th style={{ padding: '0.85rem 1rem' }}>Name</th>
                   <th style={{ padding: '0.85rem 1rem' }}>Phone</th>
                   <th style={{ padding: '0.85rem 1rem' }}>Participants</th>
@@ -1111,13 +1145,13 @@ export default function AdminDashboard() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="9" style={{ padding: '3rem', textAlign: 'center', color: '#6b7280' }}>
+                    <td colSpan="10" style={{ padding: '3rem', textAlign: 'center', color: '#6b7280' }}>
                       Loading data...
                     </td>
                   </tr>
                 ) : registrations.length === 0 ? (
                   <tr>
-                    <td colSpan="9" style={{ padding: '3rem', textAlign: 'center', color: '#6b7280' }}>
+                    <td colSpan="10" style={{ padding: '3rem', textAlign: 'center', color: '#6b7280' }}>
                       No records found.
                     </td>
                   </tr>
@@ -1145,6 +1179,15 @@ export default function AdminDashboard() {
                           {reg.is_flagged_duplicate === 1 && (
                             <span title={reg.duplicate_flag_reason || 'Flagged for review'} style={{ marginLeft: '0.4rem', cursor: 'help' }}>🚩</span>
                           )}
+                        </td>
+
+                        <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
+                          <div style={{ color: '#f3f4f6', fontWeight: 600, fontSize: '0.82rem' }}>
+                            {formatDateTime(reg.created_at).date}
+                          </div>
+                          <div style={{ color: '#9ca3af', fontSize: '0.74rem', fontFamily: 'monospace' }}>
+                            {formatDateTime(reg.created_at).time}
+                          </div>
                         </td>
 
                         <td style={{ padding: '0.85rem 1rem', fontWeight: 600, color: '#f3f4f6' }}>
@@ -1472,6 +1515,9 @@ export default function AdminDashboard() {
                     <span style={{ color: '#9ca3af' }}>Registration ID:</span>
                     <strong style={{ color: '#fff' }}>{removeTargetReg.id}</strong>
 
+                    <span style={{ color: '#9ca3af' }}>Registered At:</span>
+                    <strong style={{ color: '#60a5fa' }}>{formatDateTime(removeTargetReg.created_at).full}</strong>
+
                     <span style={{ color: '#9ca3af' }}>Registrant Name:</span>
                     <strong style={{ color: '#fff' }}>{removeTargetReg.full_name}</strong>
 
@@ -1672,6 +1718,9 @@ export default function AdminDashboard() {
 
               <div style={{ background: '#181826', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem', fontSize: '0.88rem' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.4rem 1rem' }}>
+                  <span style={{ color: '#9ca3af' }}>Registered At:</span>
+                  <strong style={{ color: '#60a5fa' }}>{formatDateTime(inspectReg.created_at).full}</strong>
+
                   <span style={{ color: '#9ca3af' }}>Name:</span>
                   <strong>{inspectReg.full_name}</strong>
 
@@ -1689,6 +1738,13 @@ export default function AdminDashboard() {
 
                   <span style={{ color: '#9ca3af' }}>Status:</span>
                   <strong style={{ color: '#4ade80' }}>{inspectReg.status}</strong>
+
+                  {inspectReg.ticket_issued_at && (
+                    <>
+                      <span style={{ color: '#9ca3af' }}>Ticket Issued:</span>
+                      <strong style={{ color: '#4ade80' }}>{formatDateTime(inspectReg.ticket_issued_at).full}</strong>
+                    </>
+                  )}
 
                   {inspectReg.cancellation_reason && (
                     <>
@@ -1808,6 +1864,7 @@ export default function AdminDashboard() {
                   </div>
                   <div style={{ fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                     <div>ID: <strong style={{ fontFamily: 'monospace' }}>{resolvePair.primary.id}</strong></div>
+                    <div>Registered: <strong style={{ color: '#60a5fa' }}>{formatDateTime(resolvePair.primary.created_at || resolvePair.primary.submitted_at).full}</strong></div>
                     <div>Name: <strong>{resolvePair.primary.full_name}</strong></div>
                     <div>Phone: {resolvePair.primary.phone}</div>
                     <div>Amount: ₹{resolvePair.primary.total_amount}</div>
@@ -1825,6 +1882,7 @@ export default function AdminDashboard() {
                   </div>
                   <div style={{ fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                     <div>ID: <strong style={{ fontFamily: 'monospace' }}>{resolvePair.duplicate.id}</strong></div>
+                    <div>Registered: <strong style={{ color: '#f87171' }}>{formatDateTime(resolvePair.duplicate.created_at || resolvePair.duplicate.submitted_at).full}</strong></div>
                     <div>Name: <strong>{resolvePair.duplicate.full_name}</strong></div>
                     <div>Phone: {resolvePair.duplicate.phone}</div>
                     <div>Amount: ₹{resolvePair.duplicate.total_amount}</div>
@@ -2024,6 +2082,7 @@ export default function AdminDashboard() {
               {permanentDeleteTarget?.full_name && (
                 <div style={{ background: '#0a0a0f', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
                   <div style={{ color: '#9ca3af' }}>Name: <strong style={{ color: '#fff' }}>{permanentDeleteTarget.full_name}</strong></div>
+                  <div style={{ color: '#9ca3af' }}>Registered At: <strong style={{ color: '#60a5fa' }}>{formatDateTime(permanentDeleteTarget.created_at).full}</strong></div>
                   <div style={{ color: '#9ca3af' }}>Phone: <span style={{ color: '#d1d5db' }}>{permanentDeleteTarget.phone}</span></div>
                   {permanentDeleteTarget.utr_reference && (
                     <div style={{ color: '#9ca3af' }}>UTR: <span style={{ color: '#fbbf24', fontFamily: 'monospace' }}>{permanentDeleteTarget.utr_reference}</span></div>
