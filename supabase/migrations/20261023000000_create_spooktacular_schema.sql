@@ -192,6 +192,18 @@ BEGIN
     FOR UPDATE;
 
     IF FOUND THEN
+        -- Prevent approving duplicate/cloned UTR if already approved for another registration
+        IF v_sub.utr_normalized IS NOT NULL AND v_sub.utr_normalized != '' THEN
+            IF EXISTS (
+                SELECT 1 FROM public.payment_submissions
+                WHERE utr_normalized = v_sub.utr_normalized
+                  AND status = 'APPROVED'
+                  AND registration_id != p_registration_id
+            ) THEN
+                RAISE EXCEPTION 'CLONE UTR DETECTED: This UTR (%) has already been approved for another registration', v_sub.utr_reference;
+            END IF;
+        END IF;
+
         UPDATE public.payment_submissions
         SET status = 'APPROVED',
             reviewed_by = p_admin_id,
@@ -648,3 +660,18 @@ CREATE POLICY "Public can validate tickets"
     FOR SELECT
     TO anon, authenticated
     USING (is_valid = true);
+
+-- ==============================================================================
+-- 6. DEFAULT SEED DATA
+-- ==============================================================================
+-- Pre-populates the default admin account (Username: admin, Password: SpookyAdmin2026!)
+-- Safely skips if admin already exists.
+INSERT INTO public.admin_users (username, email, password_hash, role, is_active)
+VALUES (
+    'admin',
+    'admin@spooktacular2026.com',
+    '$2b$10$l8Zh/OVept49nejI22OGTeyySiW5mq.SAAkI58qXBviiE853z418u',
+    'admin',
+    true
+)
+ON CONFLICT (username) DO NOTHING;
