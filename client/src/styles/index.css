@@ -1943,4 +1943,31 @@ h1, h2, h3, h4, h5, h6 {
   100% { transform: translateY(-6px); }
 }
 
+/* =====================================================
+   Print & Download Ticket Styles
+   ===================================================== */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print,
+  nav,
+  footer,
+  .audio-player-container,
+  .ambient-lights,
+  .music-toggle,
+  .distressed-pill {
+    display: none !important;
+  }
+  #printable-ticket {
+    box-shadow: none !important;
+    border: 2px solid #000000 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 auto !important;
+    page-break-inside: avoid !important;
+  }
+}
+
 

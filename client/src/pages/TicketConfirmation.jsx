@@ -66,8 +66,8 @@ export default function TicketConfirmation() {
 
   const isConfirmed = registration.status === 'PAYMENT_VERIFIED' || registration.status === 'APPROVED';
   const isPendingReview = registration.status === 'PAYMENT_UNDER_REVIEW' || registration.status === 'UNDER_REVIEW';
-  const isCancelled = registration.status === 'CANCELLED' || registration.ticket_is_valid === 0;
   const isRejected = registration.status === 'PAYMENT_REJECTED' || registration.status === 'REJECTED';
+  const isCancelled = registration.status === 'CANCELLED' || (!isPendingReview && !isConfirmed && Boolean(registration.ticket_number) && registration.ticket_is_valid === 0);
 
   const ticketNumber = registration.ticket_number || `REG-${registration.id.replace('SPH-', '')}`;
   const validationUrl = `${window.location.origin}/lookup?ticket=${ticketNumber}`;
@@ -88,7 +88,7 @@ export default function TicketConfirmation() {
             SPOOKTACULAR HALLOWEEN PARTY
           </h1>
           <div className="distressed-pill">
-            {isCancelled ? 'TICKET CANCELLED' : isPendingReview ? 'UNDER REVIEW' : 'YOUR TICKET IS READY!'}
+            {isCancelled ? 'TICKET CANCELLED' : isPendingReview ? 'PENDING APPROVAL BY ADMIN' : isConfirmed ? 'VERIFIED & APPROVED' : 'YOUR TICKET IS READY!'}
           </div>
         </div>
 
@@ -113,17 +113,20 @@ export default function TicketConfirmation() {
         {/* Review Notice if pending verification */}
         {isPendingReview && !isCancelled && (
           <div style={{
-            background: 'rgba(245, 158, 11, 0.12)',
-            border: '1px solid #f59e0b',
+            background: 'rgba(245, 158, 11, 0.15)',
+            border: '2px solid #f59e0b',
             borderRadius: '12px',
-            padding: '1rem',
+            padding: '1.25rem',
             color: '#fcd34d',
             textAlign: 'center',
             marginBottom: '1.75rem'
           }}>
-            <h3 style={{ fontSize: '1.05rem', marginBottom: '0.25rem' }}>⏳ Payment Submitted — Under Review</h3>
-            <p style={{ margin: 0, fontSize: '0.85rem' }}>
-              Your transaction reference is being verified by our operations team. Bookmark this URL to check your confirmed boarding pass!
+            <h3 style={{ fontSize: '1.15rem', marginBottom: '0.4rem', color: '#fbbf24', fontWeight: 800 }}>
+              ⏳ Payment Submitted — Pending Approval by Admin
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.88rem', color: '#e5e7eb', lineHeight: 1.5 }}>
+              Your transaction reference (UTR) has been submitted and is waiting for administrator approval.<br />
+              Once approved by admin, your ticket will be marked as <strong style={{ color: '#4ade80' }}>VERIFIED & APPROVED</strong> and ready to download!
             </p>
           </div>
         )}
@@ -154,7 +157,7 @@ export default function TicketConfirmation() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>
                 <div>
                   <div style={{ fontSize: '0.7rem', color: '#6b7280', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '1px' }}>
-                    Ticket Number
+                    {isConfirmed ? 'Official Ticket Number' : 'Registration Reference'}
                   </div>
                   <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.35rem', fontWeight: 900, color: '#111827' }}>
                     {ticketNumber}
@@ -163,8 +166,8 @@ export default function TicketConfirmation() {
 
                 <div>
                   {isConfirmed && !isCancelled && (
-                    <span className="confirmed-badge">
-                      CONFIRMED
+                    <span className="confirmed-badge" style={{ background: '#22c55e', color: '#fff', padding: '0.35rem 0.9rem', borderRadius: '6px', fontWeight: 800, fontSize: '0.8rem', letterSpacing: '1px' }}>
+                      ✓ VERIFIED & APPROVED
                     </span>
                   )}
                   {isPendingReview && !isCancelled && (
@@ -174,11 +177,11 @@ export default function TicketConfirmation() {
                       fontFamily: 'var(--font-heading)',
                       fontWeight: 800,
                       fontSize: '0.75rem',
-                      padding: '0.3rem 0.8rem',
+                      padding: '0.35rem 0.85rem',
                       borderRadius: '6px',
                       letterSpacing: '1px'
                     }}>
-                      UNDER REVIEW
+                      ⏳ PENDING ADMIN APPROVAL
                     </span>
                   )}
                   {isCancelled && (
@@ -229,7 +232,7 @@ export default function TicketConfirmation() {
                 <div style={{ textAlign: 'center', flexShrink: 0 }}>
                   <QrCodeDisplay text={validationUrl} size={135} />
                   <div style={{ fontSize: '0.72rem', color: '#6b7280', fontWeight: 600, marginTop: '0.25rem' }}>
-                    Scan at Entry
+                    {isConfirmed ? 'Scan at Entry' : 'Verification QR'}
                   </div>
                 </div>
               </div>
@@ -260,22 +263,43 @@ export default function TicketConfirmation() {
           gap: '1rem',
           marginTop: '2rem'
         }}>
-          <button
-            onClick={handlePrint}
-            className="btn btn-primary"
-            style={{
-              background: 'linear-gradient(135deg, #ff6b00, #ff3b00)',
-              color: '#fff',
-              fontFamily: 'var(--font-heading)',
-              fontWeight: 800,
-              padding: '0.75rem 1.75rem',
-              borderRadius: '50px',
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            📥 Download Ticket
-          </button>
+          {isConfirmed && !isCancelled && (
+            <button
+              onClick={handlePrint}
+              className="btn btn-primary"
+              style={{
+                background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                color: '#fff',
+                fontFamily: 'var(--font-heading)',
+                fontWeight: 800,
+                padding: '0.75rem 1.75rem',
+                borderRadius: '50px',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              📥 Download Original Ticket
+            </button>
+          )}
+
+          {isPendingReview && !isCancelled && (
+            <button
+              onClick={fetchStatus}
+              className="btn btn-secondary"
+              style={{
+                background: 'rgba(245, 158, 11, 0.2)',
+                color: '#fbbf24',
+                border: '1px solid #f59e0b',
+                fontFamily: 'var(--font-heading)',
+                fontWeight: 700,
+                padding: '0.75rem 1.75rem',
+                borderRadius: '50px',
+                cursor: 'pointer'
+              }}
+            >
+              🔄 Refresh Status
+            </button>
+          )}
 
           <button
             onClick={handleShare}

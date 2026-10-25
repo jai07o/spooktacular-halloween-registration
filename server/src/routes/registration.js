@@ -185,8 +185,14 @@ router.post('/payment/submit', [
 router.get('/ticket/validate/:ticketNumber', async (req, res) => {
   try {
     let ticket = null;
+    const rawQuery = (req.params.ticketNumber || '').trim();
+    if (!rawQuery) {
+      return res.status(400).json({ error: 'Ticket number or identifier is required' });
+    }
 
-    const queryTerm = (req.params.ticketNumber || '').trim();
+    const queryTerm = rawQuery;
+    const cleanDigits = queryTerm.replace(/\D/g, '');
+    const phone10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : null;
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabase();
@@ -194,7 +200,7 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
         .from('tickets')
         .select(`
           *,
-          registrations (id, full_name, phone, place, participant_count, status)
+          registrations (id, full_name, phone, place, participant_count, status, access_token)
         `)
         .eq('ticket_number', queryTerm)
         .maybeSingle();
@@ -205,7 +211,7 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
           .from('tickets')
           .select(`
             *,
-            registrations (id, full_name, phone, place, participant_count, status)
+            registrations (id, full_name, phone, place, participant_count, status, access_token)
           `)
           .eq('registration_id', queryTerm)
           .maybeSingle();
@@ -214,14 +220,21 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
 
       if (!ticketData) {
         // Look up by phone number
-        const { data: byPhone } = await supabase
+        let phoneQuery = supabase
           .from('tickets')
           .select(`
             *,
-            registrations!inner (id, full_name, phone, place, participant_count, status)
+            registrations!inner (id, full_name, phone, place, participant_count, status, access_token)
           `)
-          .eq('registrations.phone', queryTerm)
-          .eq('is_valid', true)
+          .eq('is_valid', true);
+
+        if (phone10) {
+          phoneQuery = phoneQuery.or(`phone.eq.${queryTerm},phone.eq.${cleanDigits},phone.ilike.%${phone10}%`, { foreignTable: 'registrations' });
+        } else {
+          phoneQuery = phoneQuery.eq('registrations.phone', queryTerm);
+        }
+
+        const { data: byPhone } = await phoneQuery
           .order('issued_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -229,33 +242,133 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
       }
 
       if (ticketData) {
+        const regObj = Array.isArray(ticketData.registrations)
+          ? ticketData.registrations[0]
+          : (ticketData.registrations || {});
+
         ticket = {
           ...ticketData,
-          registration_id: ticketData.registration_id || ticketData.registrations?.id,
-          full_name: ticketData.registrations?.full_name,
-          phone: ticketData.registrations?.phone,
-          place: ticketData.registrations?.place,
-          participant_count: ticketData.registrations?.participant_count,
-          reg_status: ticketData.registrations?.status
+          registration_id: ticketData.registration_id || regObj?.id,
+          full_name: regObj?.full_name,
+          phone: regObj?.phone,
+          place: regObj?.place,
+          participant_count: regObj?.participant_count,
+          reg_status: regObj?.status,
+          access_token: regObj?.access_token
         };
       }
     } else {
       const db = getDb();
       ticket = db.prepare(`
-        SELECT t.*, r.id as registration_id, r.full_name, r.phone, r.place, r.participant_count, r.status as reg_status
+        SELECT t.*, r.id as registration_id, r.full_name, r.phone, r.place, r.participant_count, r.status as reg_status, r.access_token
         FROM tickets t
         JOIN registrations r ON r.id = t.registration_id
-        WHERE t.ticket_number = ? OR t.registration_id = ? OR r.phone = ?
+        WHERE t.ticket_number = ? OR t.registration_id = ? OR r.phone = ? OR (r.phone LIKE ?)
         ORDER BY t.issued_at DESC
         LIMIT 1
-      `).get(queryTerm, queryTerm, queryTerm);
+      `).get(queryTerm, queryTerm, queryTerm, phone10 ? `%${phone10}%` : `%${queryTerm}%`);
     }
 
     if (!ticket) {
+      // Check if registration exists but ticket hasn't been issued yet (e.g. pending admin approval)
+      let regData = null;
+      if (isSupabaseConfigured()) {
+        const supabase = getSupabase();
+        let regQuery = supabase
+          .from('registrations')
+          .select('id, full_name, phone, place, participant_count, status, access_token');
+
+        if (phone10) {
+          regQuery = regQuery.or(`id.eq.${queryTerm},phone.eq.${queryTerm},phone.eq.${cleanDigits},phone.ilike.%${phone10}%`);
+        } else {
+          regQuery = regQuery.or(`id.eq.${queryTerm},phone.eq.${queryTerm}`);
+        }
+
+        const { data: reg } = await regQuery
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        regData = reg;
+      } else {
+        const db = getDb();
+        regData = db.prepare(`
+          SELECT id, full_name, phone, place, participant_count, status, access_token
+          FROM registrations
+          WHERE id = ? OR phone = ? OR phone LIKE ?
+          ORDER BY created_at DESC
+          LIMIT 1
+        `).get(queryTerm, queryTerm, phone10 ? `%${phone10}%` : `%${queryTerm}%`);
+      }
+
+      if (regData) {
+        if (regData.status === 'PAYMENT_UNDER_REVIEW' || regData.status === 'UNDER_REVIEW') {
+          return res.json({
+            valid: false,
+            pendingApproval: true,
+            status: 'PAYMENT_UNDER_REVIEW',
+            message: 'Payment received — Pending admin verification. Once verified by admin, your official ticket will become active.',
+            registrationId: regData.id,
+            name: regData.full_name,
+            phone: regData.phone,
+            place: regData.place,
+            participants: regData.participant_count,
+            accessToken: regData.access_token
+          });
+        }
+
+        if (regData.status === 'PAYMENT_VERIFIED' || regData.status === 'APPROVED') {
+          let ticketNum = null;
+          if (isSupabaseConfigured()) {
+            const { data: t } = await getSupabase()
+              .from('tickets')
+              .select('ticket_number')
+              .eq('registration_id', regData.id)
+              .maybeSingle();
+            if (t) ticketNum = t.ticket_number;
+          }
+          return res.json({
+            valid: true,
+            status: regData.status || 'PAYMENT_VERIFIED',
+            ticketNumber: ticketNum || `REG-${regData.id.replace('SPH-', '')}`,
+            registrationId: regData.id,
+            name: regData.full_name,
+            phone: regData.phone,
+            place: regData.place,
+            participants: regData.participant_count,
+            accessToken: regData.access_token
+          });
+        }
+
+        if (regData.status === 'CANCELLED') {
+          return res.json({
+            valid: false,
+            status: 'CANCELLED',
+            message: 'This registration has been cancelled or revoked by administration.',
+            registrationId: regData.id,
+            name: regData.full_name
+          });
+        }
+
+        if (regData.status === 'PENDING_PAYMENT') {
+          return res.json({
+            valid: false,
+            status: 'PENDING_PAYMENT',
+            message: 'Registration created, but payment reference has not been submitted yet.',
+            registrationId: regData.id,
+            name: regData.full_name,
+            accessToken: regData.access_token
+          });
+        }
+      }
+
       return res.json({ valid: false, message: 'Ticket not found' });
     }
 
-    if (ticket.is_valid === 0 || ticket.is_valid === false || ticket.reg_status === 'CANCELLED') {
+    const isUnderReview = ticket.reg_status === 'PAYMENT_UNDER_REVIEW' || ticket.reg_status === 'UNDER_REVIEW';
+    const isApproved = ticket.reg_status === 'PAYMENT_VERIFIED' || ticket.reg_status === 'APPROVED' || ticket.is_valid === true || ticket.is_valid === 1;
+    const isCancelled = ticket.reg_status === 'CANCELLED' || (!isUnderReview && !isApproved && (ticket.is_valid === 0 || ticket.is_valid === false));
+
+    if (isCancelled) {
       return res.json({
         valid: false,
         message: 'This ticket has been cancelled or revoked by administration.',
@@ -265,13 +378,19 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
       });
     }
 
-    if (ticket.reg_status !== 'PAYMENT_VERIFIED' && ticket.reg_status !== 'APPROVED') {
+    if (isUnderReview) {
       return res.json({
         valid: false,
-        message: 'Ticket payment has not been confirmed.',
+        pendingApproval: true,
+        message: 'Payment submitted and pending admin approval. Once approved, your ticket will be verified.',
         ticketNumber: ticket.ticket_number,
         registrationId: ticket.registration_id,
-        status: ticket.reg_status
+        name: ticket.full_name,
+        phone: ticket.phone,
+        place: ticket.place,
+        participants: ticket.participant_count,
+        status: 'PAYMENT_UNDER_REVIEW',
+        accessToken: ticket.access_token
       });
     }
 
@@ -283,7 +402,8 @@ router.get('/ticket/validate/:ticketNumber', async (req, res) => {
       phone: ticket.phone,
       place: ticket.place,
       participants: ticket.participant_count,
-      status: ticket.reg_status,
+      status: ticket.reg_status || 'PAYMENT_VERIFIED',
+      accessToken: ticket.access_token,
       issuedAt: ticket.issued_at
     });
   } catch (error) {
