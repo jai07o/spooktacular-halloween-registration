@@ -4,6 +4,16 @@
  */
 
 require('dotenv').config();
+
+// Global process-level safety handlers to prevent server crashes from transient network drops or socket resets
+process.on('uncaughtException', (err) => {
+  console.error('[CRITICAL] Uncaught exception intercepted to prevent crash:', err && (err.stack || err.message || err));
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[CRITICAL] Unhandled promise rejection intercepted to prevent crash:', reason && (reason.stack || reason.message || reason));
+});
+
 const express = require('express');
 const session = require('express-session');
 const cors = require('cors');
@@ -12,7 +22,7 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 const { initializeDb, getDb } = require('./db/database');
-const { isSupabaseConfigured } = require('./db/supabase');
+const { isSupabaseConfigured, pingDatabase } = require('./db/supabase');
 const registrationRoutes = require('./routes/registration');
 const adminRoutes = require('./routes/admin');
 const paymentService = require('./services/payment');
@@ -101,13 +111,33 @@ if (!isSupabaseConfigured()) {
   }
 }
 
+// Fast health-check & ping endpoints for uptime monitors and database keepalive
+app.get(['/api/health', '/health', '/api/ping'], async (req, res) => {
+  try {
+    const ping = await pingDatabase();
+    res.status(200).json({
+      status: 'ok',
+      uptime: Math.floor(process.uptime()),
+      database: ping,
+      timestamp: new Date().toISOString()
+    });
+  } catch (e) {
+    res.status(200).json({
+      status: 'degraded',
+      error: e.message,
+      uptime: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // API routes — Mount both /api/admin & /admin, and /api & / to guarantee compatibility with all Vercel/proxy rewrites
 app.use('/api/admin', adminRoutes);
 app.use('/admin', adminRoutes);
 app.use('/api', registrationRoutes);
 app.use('/', registrationRoutes);
 
- // Serve frontend only when explicitly enabled.
+// Serve frontend only when explicitly enabled.
 // Render hosts the API; Vercel hosts the frontend.
 if (
   process.env.NODE_ENV === 'production' &&
@@ -128,9 +158,11 @@ if (
   }
 }
 
-// Session cleanup interval (only in standalone persistent servers, not in Vercel serverless or tests)
+// Background maintenance intervals (only in standalone persistent servers, not in Vercel serverless or tests)
 let cleanupInterval = null;
+let keepaliveInterval = null;
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
+  // Stale payment session cleanup every 30s
   cleanupInterval = setInterval(() => {
     try {
       paymentService.expireStalePaymentSessions();
@@ -138,6 +170,15 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
       // Silently handle cleanup errors
     }
   }, 30000);
+
+  // Database keep-alive ping every 4 minutes to prevent idle connection pool drops & database sleeping
+  keepaliveInterval = setInterval(async () => {
+    try {
+      await pingDatabase();
+    } catch (e) {
+      // Silently handle background keepalive errors
+    }
+  }, 4 * 60 * 1000);
 }
 
 // Error handling middleware
@@ -157,6 +198,7 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   if (cleanupInterval) clearInterval(cleanupInterval);
+  if (keepaliveInterval) clearInterval(keepaliveInterval);
   if (server) {
     server.close(() => {
       const { closeDb } = require('./db/database');

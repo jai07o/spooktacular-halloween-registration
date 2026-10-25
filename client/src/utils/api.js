@@ -4,7 +4,8 @@
 
 const API_BASE = '/api';
 
-async function request(url, options = {}) {
+async function request(url, options = {}, retries = 1) {
+  const method = (options.method || 'GET').toUpperCase();
   const config = {
     headers: {
       'Content-Type': 'application/json',
@@ -18,28 +19,51 @@ async function request(url, options = {}) {
     config.body = JSON.stringify(config.body);
   }
 
-  const response = await fetch(`${API_BASE}${url}`, config);
-  
-  if (response.headers.get('content-type')?.includes('application/json')) {
-    const data = await response.json();
-    if (!response.ok) {
-      const error = new Error(data.error || data.errors?.[0]?.msg || 'Request failed');
-      error.status = response.status;
-      error.data = data;
-      throw error;
+  // 15-second request timeout to prevent UI freezes on slow networks or cold starts
+  const timeoutMs = options.timeout || 15000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${API_BASE}${url}`, {
+      ...config,
+      signal: options.signal || controller.signal
+    });
+    clearTimeout(timeoutId);
+    
+    if (response.headers.get('content-type')?.includes('application/json')) {
+      const data = await response.json();
+      if (!response.ok) {
+        const error = new Error(data.error || data.errors?.[0]?.msg || 'Request failed');
+        error.status = response.status;
+        error.data = data;
+        throw error;
+      }
+      return data;
     }
-    return data;
+    
+    if (!response.ok) {
+      throw new Error(`Request failed with status ${response.status}`);
+    }
+    
+    return response;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    // Auto-retry idempotent GET requests once if network glitch or cold start occurs
+    if (retries > 0 && method === 'GET' && (err.name === 'AbortError' || err.message?.includes('Failed to fetch') || err.message?.includes('network'))) {
+      await new Promise(r => setTimeout(r, 1000));
+      return request(url, options, retries - 1);
+    }
+    if (err.name === 'AbortError') {
+      throw new Error('Connection timed out. Please check your network and try again.');
+    }
+    throw err;
   }
-  
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
-  
-  return response;
 }
 
 export const api = {
   // Public endpoints
+  checkHealth: () => request('/health'),
   getPricing: () => request('/pricing'),
   
   register: (data) => request('/register', { method: 'POST', body: data }),
