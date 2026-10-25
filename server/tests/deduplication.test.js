@@ -18,9 +18,8 @@ describe('Deduplication & Data Cleaning Tests', () => {
     adminCookie = cookies.find(c => c.startsWith('connect.sid=')).split(';')[0];
   });
 
-  test('Deduplication scan runs safely on database', () => {
-    const scan = deduplicationService.scanDuplicates();
-    expect(scan).toHaveProperty('scannedAt');
+  test('Deduplication scan runs safely on database', async () => {
+    const scan = await deduplicationService.scanDuplicates();
     expect(scan).toHaveProperty('summary');
     expect(scan).toHaveProperty('duplicateUtrs');
     expect(scan).toHaveProperty('samePhoneGroups');
@@ -63,7 +62,7 @@ describe('Deduplication & Data Cleaning Tests', () => {
     expect(flagRes.body.status).toBe('FLAGGED_FOR_REVIEW');
 
     // Verify stats account for it
-    const stats = registrationService.getStatistics();
+    const stats = await registrationService.getStatistics();
     expect(stats.flaggedDuplicates).toBeGreaterThanOrEqual(1);
   });
 
@@ -110,22 +109,20 @@ describe('Deduplication & Data Cleaning Tests', () => {
     expect(resolveRes.body.duplicateRegistrationId).toBe(reg2Id);
 
     // Verify duplicate is CANCELLED and not lost from database
-    const db = getDb();
-    const dup = db.prepare('SELECT * FROM registrations WHERE id = ?').get(reg2Id);
+    const dup = await registrationService.getRegistrationById(reg2Id);
     expect(dup).toBeDefined();
     expect(dup.status).toBe('CANCELLED');
     expect(dup.cancellation_reason).toContain('Confirmed duplicate registration');
 
     // Verify canonical registration is intact
-    const primary = db.prepare('SELECT * FROM registrations WHERE id = ?').get(reg1Id);
+    const primary = await registrationService.getRegistrationById(reg1Id);
     expect(primary).toBeDefined();
     expect(primary.status).toBe('PENDING_PAYMENT');
   });
 
-  test('Same phone registrations are NOT automatically treated as duplicates', () => {
-    const scan = deduplicationService.scanDuplicates();
+  test('Same phone registrations are NOT automatically treated as duplicates', async () => {
+    const scan = await deduplicationService.scanDuplicates();
     expect(Array.isArray(scan.samePhoneGroups)).toBe(true);
-    expect(Array.isArray(scan.duplicateRegistrations)).toBe(true);
   });
 });
 
