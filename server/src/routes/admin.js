@@ -411,6 +411,44 @@ router.post('/restore/:id', requireAdmin, async (req, res) => {
 });
 
 /**
+ * POST /api/admin/permanent-delete/:id - Permanently delete a registration (no restore)
+ */
+router.post('/permanent-delete/:id', requireAdmin, async (req, res) => {
+  try {
+    const result = await registrationService.permanentDeleteRegistration(
+      req.params.id,
+      req.session.adminId,
+      req.session.username
+    );
+    res.json(result);
+  } catch (error) {
+    console.error('Permanent delete error:', error);
+    res.status(400).json({ error: error.message || 'Failed to permanently delete registration' });
+  }
+});
+
+/**
+ * POST /api/admin/delete-all - Permanently delete ALL registrations and tickets (no restore)
+ */
+router.post('/delete-all', requireAdmin, async (req, res) => {
+  try {
+    const { confirmation } = req.body;
+    if (confirmation !== 'DELETE ALL') {
+      return res.status(400).json({ error: 'Explicit confirmation "DELETE ALL" is required to wipe database.' });
+    }
+
+    const result = await registrationService.deleteAllRegistrations(
+      req.session.adminId,
+      req.session.username
+    );
+    res.json(result);
+  } catch (error) {
+    console.error('Delete all error:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete all registrations' });
+  }
+});
+
+/**
  * GET /api/admin/duplicates/scan - Scan for duplicate registrations and payments
  */
 router.get('/duplicates/scan', requireAdmin, async (req, res) => {

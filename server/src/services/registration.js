@@ -641,6 +641,132 @@ class RegistrationService {
   }
 
   /**
+   * Permanently delete a registration and all associated records from the database.
+   * No restore is possible.
+   */
+  async permanentDeleteRegistration(id, adminId, adminUsername) {
+    const currentTime = now().toISOString();
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabase();
+      
+      // Delete child records first
+      await supabase.from('tickets').delete().eq('registration_id', id);
+      await supabase.from('payment_submissions').delete().eq('registration_id', id);
+      await supabase.from('payment_sessions').delete().eq('registration_id', id);
+
+      // Delete the registration
+      const { error } = await supabase.from('registrations').delete().eq('id', id);
+      if (error) {
+        throw new Error(`Failed to delete registration: ${error.message}`);
+      }
+
+      // Log permanent deletion in audit log
+      await supabase.from('admin_audit_log').insert({
+        admin_username: adminUsername || 'admin',
+        action: 'PERMANENT_DELETE',
+        target_type: 'registration',
+        target_id: id,
+        details: JSON.stringify({ deletedPermanently: true, noRestorePossible: true }),
+        created_at: currentTime
+      });
+
+      return {
+        success: true,
+        registrationId: id,
+        message: `Registration ${id} permanently deleted from database. No restore possible.`
+      };
+    }
+
+    const db = getDb();
+    const deleteTransaction = db.transaction(() => {
+      db.prepare('DELETE FROM tickets WHERE registration_id = ?').run(id);
+      db.prepare('DELETE FROM payment_submissions WHERE registration_id = ?').run(id);
+      db.prepare('DELETE FROM payment_sessions WHERE registration_id = ?').run(id);
+      db.prepare('DELETE FROM registrations WHERE id = ?').run(id);
+
+      db.prepare(`
+        INSERT INTO admin_audit_log (admin_id, admin_username, action, target_type, target_id, details, ip_address, created_at)
+        VALUES (?, ?, 'PERMANENT_DELETE', 'registration', ?, ?, '127.0.0.1', ?)
+      `).run(
+        adminId || 1,
+        adminUsername || 'admin',
+        id,
+        JSON.stringify({ deletedPermanently: true, noRestorePossible: true }),
+        currentTime
+      );
+    });
+
+    deleteTransaction();
+
+    return {
+      success: true,
+      registrationId: id,
+      message: `Registration ${id} permanently deleted from database. No restore possible.`
+    };
+  }
+
+  /**
+   * Permanently delete ALL registrations, tickets, submissions, and sessions from the database.
+   * Total wipe / reset. No restore is possible.
+   */
+  async deleteAllRegistrations(adminId, adminUsername) {
+    const currentTime = now().toISOString();
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabase();
+
+      // Delete all tickets, submissions, sessions, and registrations
+      await supabase.from('tickets').delete().neq('id', 0);
+      await supabase.from('payment_submissions').delete().neq('id', 0);
+      await supabase.from('payment_sessions').delete().neq('id', 'NONE');
+      const { error } = await supabase.from('registrations').delete().neq('id', 'NONE');
+      if (error) {
+        throw new Error(`Failed to delete all registrations: ${error.message}`);
+      }
+
+      await supabase.from('admin_audit_log').insert({
+        admin_username: adminUsername || 'admin',
+        action: 'DELETE_ALL_REGISTRATIONS',
+        target_type: 'database',
+        target_id: 'all',
+        details: JSON.stringify({ deletedAll: true, noRestorePossible: true }),
+        created_at: currentTime
+      });
+
+      return {
+        success: true,
+        message: 'All registrations, tickets, and payment submissions permanently deleted from database. No restore possible.'
+      };
+    }
+
+    const db = getDb();
+    const deleteAllTransaction = db.transaction(() => {
+      db.prepare('DELETE FROM tickets').run();
+      db.prepare('DELETE FROM payment_submissions').run();
+      db.prepare('DELETE FROM payment_sessions').run();
+      db.prepare('DELETE FROM registrations').run();
+
+      db.prepare(`
+        INSERT INTO admin_audit_log (admin_id, admin_username, action, target_type, target_id, details, ip_address, created_at)
+        VALUES (?, ?, 'DELETE_ALL_REGISTRATIONS', 'database', 'all', ?, '127.0.0.1', ?)
+      `).run(
+        adminId || 1,
+        adminUsername || 'admin',
+        JSON.stringify({ deletedAll: true, noRestorePossible: true }),
+        currentTime
+      );
+    });
+
+    deleteAllTransaction();
+
+    return {
+      success: true,
+      message: 'All registrations, tickets, and payment submissions permanently deleted from database. No restore possible.'
+    };
+  }
+
+  /**
    * Update registration status.
    */
   async updateStatus(id, status) {

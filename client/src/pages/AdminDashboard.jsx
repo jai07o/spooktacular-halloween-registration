@@ -44,6 +44,13 @@ export default function AdminDashboard() {
   const [flagTargetId, setFlagTargetId] = useState(null);
   const [flagReason, setFlagReason] = useState('Suspicious duplicate payment claim');
 
+  // Permanent Delete & Delete All States
+  const [permanentDeleteModalOpen, setPermanentDeleteModalOpen] = useState(false);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState(null);
+  const [permanentDeleteInputId, setPermanentDeleteInputId] = useState('');
+  const [deleteAllModalOpen, setDeleteAllModalOpen] = useState(false);
+  const [deleteAllConfirmation, setDeleteAllConfirmation] = useState('');
+
   const [feedbackMessage, setFeedbackMessage] = useState(null);
 
   // Check auth
@@ -285,6 +292,101 @@ export default function AdminDashboard() {
     } finally {
       setActionLoading(false);
       setTimeout(() => setFeedbackMessage(null), 4000);
+    }
+  };
+
+  // Detect cloned UTRs across loaded registrations
+  const duplicateUtrSet = React.useMemo(() => {
+    const counts = {};
+    (registrations || []).forEach(r => {
+      const utr = (r.utr_normalized || r.utr_reference || '').trim().toUpperCase();
+      if (utr) {
+        counts[utr] = (counts[utr] || 0) + 1;
+      }
+    });
+    const dupes = new Set();
+    Object.entries(counts).forEach(([utr, count]) => {
+      if (count > 1) dupes.add(utr);
+    });
+    return dupes;
+  }, [registrations]);
+
+  // Permanent Delete Handlers (No restore possible)
+  const openPermanentDeleteModal = (regOrId) => {
+    if (typeof regOrId === 'object' && regOrId !== null) {
+      setPermanentDeleteTarget(regOrId);
+      setPermanentDeleteInputId(regOrId.id);
+    } else if (typeof regOrId === 'string' && regOrId.trim()) {
+      setPermanentDeleteTarget({ id: regOrId.trim() });
+      setPermanentDeleteInputId(regOrId.trim());
+    } else {
+      setPermanentDeleteTarget(null);
+      setPermanentDeleteInputId('');
+    }
+    setPermanentDeleteModalOpen(true);
+  };
+
+  const handleExecutePermanentDelete = async () => {
+    const targetId = (permanentDeleteTarget?.id || permanentDeleteInputId).trim();
+    if (!targetId) {
+      alert('Please enter or select a Registration ID to permanently delete.');
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      const res = await api.adminPermanentDelete(targetId);
+      setFeedbackMessage({
+        type: 'success',
+        text: res.message || `Registration ${targetId} permanently deleted from database (no restore possible).`
+      });
+      setPermanentDeleteModalOpen(false);
+      setPermanentDeleteTarget(null);
+      setPermanentDeleteInputId('');
+      if (inspectReg && inspectReg.id === targetId) {
+        setInspectReg(null);
+        setInspectDetails(null);
+      }
+      fetchStats();
+      fetchRegistrations(pagination.page);
+    } catch (err) {
+      setFeedbackMessage({ type: 'error', text: err.message || 'Permanent deletion failed' });
+    } finally {
+      setActionLoading(false);
+      setTimeout(() => setFeedbackMessage(null), 5000);
+    }
+  };
+
+  // Delete All Registrations (Wipe Database - No restore possible)
+  const openDeleteAllModal = () => {
+    setDeleteAllConfirmation('');
+    setDeleteAllModalOpen(true);
+  };
+
+  const handleExecuteDeleteAll = async () => {
+    if (deleteAllConfirmation.trim() !== 'DELETE ALL') {
+      alert('You must type "DELETE ALL" to confirm.');
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      const res = await api.adminDeleteAll('DELETE ALL');
+      setFeedbackMessage({
+        type: 'success',
+        text: res.message || 'All registrations, tickets, and payment submissions permanently deleted from database (no restore possible).'
+      });
+      setDeleteAllModalOpen(false);
+      setDeleteAllConfirmation('');
+      setInspectReg(null);
+      setInspectDetails(null);
+      fetchStats();
+      fetchRegistrations(1);
+    } catch (err) {
+      setFeedbackMessage({ type: 'error', text: err.message || 'Delete all failed' });
+    } finally {
+      setActionLoading(false);
+      setTimeout(() => setFeedbackMessage(null), 5000);
     }
   };
 
@@ -921,6 +1023,7 @@ export default function AdminDashboard() {
 
               {/* Export to Excel Orange Button matching Screen 6 */}
               <button
+                type="button"
                 onClick={handleExport}
                 className="btn btn-primary btn-sm"
                 style={{
@@ -933,6 +1036,53 @@ export default function AdminDashboard() {
                 }}
               >
                 📁 Export to Excel
+              </button>
+
+              {/* Delete Permanently Button in Database */}
+              <button
+                type="button"
+                onClick={() => openPermanentDeleteModal()}
+                className="btn btn-sm"
+                title="Permanently delete registration details from database (No restore possible)"
+                style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid #ef4444',
+                  color: '#f87171',
+                  fontFamily: 'var(--font-heading)',
+                  fontWeight: 800,
+                  padding: '0.65rem 1.15rem',
+                  borderRadius: '8px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  cursor: 'pointer'
+                }}
+              >
+                🗑️ Delete Permanently
+              </button>
+
+              {/* Delete All Button (Wipe Database) */}
+              <button
+                type="button"
+                onClick={openDeleteAllModal}
+                className="btn btn-sm"
+                title="Permanently delete ALL database registrations (No restore possible)"
+                style={{
+                  background: 'linear-gradient(135deg, #dc2626, #991b1b)',
+                  border: '1px solid #ef4444',
+                  color: '#ffffff',
+                  fontFamily: 'var(--font-heading)',
+                  fontWeight: 800,
+                  padding: '0.65rem 1.25rem',
+                  borderRadius: '8px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  boxShadow: '0 0 15px rgba(220, 38, 38, 0.4)',
+                  cursor: 'pointer'
+                }}
+              >
+                💥 Delete All
               </button>
             </div>
 
@@ -981,11 +1131,14 @@ export default function AdminDashboard() {
                     const isCancelled = reg.status === 'CANCELLED';
                     const isFlagged = reg.status === 'FLAGGED_FOR_REVIEW' || reg.is_flagged_duplicate === 1;
 
+                    const normUtr = (reg.utr_normalized || reg.utr_reference || '').trim().toUpperCase();
+                    const isClonedUtr = Boolean(normUtr && duplicateUtrSet.has(normUtr));
+
                     return (
                       <tr key={reg.id} style={{
                         borderBottom: '1px solid rgba(255,255,255,0.04)',
                         transition: 'background 0.15s',
-                        background: isFlagged ? 'rgba(239, 68, 68, 0.05)' : 'transparent'
+                        background: isFlagged || isClonedUtr ? 'rgba(239, 68, 68, 0.05)' : 'transparent'
                       }}>
                         <td style={{ padding: '0.85rem 1rem', fontFamily: 'monospace', color: '#9ca3af' }}>
                           {reg.id}
@@ -1010,8 +1163,25 @@ export default function AdminDashboard() {
                           ₹{reg.total_amount}
                         </td>
 
-                        <td style={{ padding: '0.85rem 1rem', fontFamily: 'monospace', fontSize: '0.8rem', color: '#d1d5db' }}>
-                          {reg.utr_reference || '—'}
+                        <td style={{ padding: '0.85rem 1rem', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                          <span style={{ color: isClonedUtr ? '#ef4444' : '#d1d5db', fontWeight: isClonedUtr ? 800 : 500 }}>
+                            {reg.utr_reference || '—'}
+                          </span>
+                          {isClonedUtr && (
+                            <span style={{
+                              display: 'inline-block',
+                              background: '#ef4444',
+                              color: '#fff',
+                              fontSize: '0.65rem',
+                              fontWeight: 900,
+                              padding: '0.15rem 0.4rem',
+                              borderRadius: '4px',
+                              marginLeft: '0.4rem',
+                              letterSpacing: '0.5px'
+                            }}>
+                              ⚠️ CLONE UTR
+                            </span>
+                          )}
                         </td>
 
                         <td style={{ padding: '0.85rem 1rem' }}>
@@ -1164,6 +1334,7 @@ export default function AdminDashboard() {
                             {/* REMOVE REGISTRATION BUTTON */}
                             {!isCancelled && (
                               <button
+                                type="button"
                                 onClick={() => openRemoveModal(reg)}
                                 disabled={actionLoading}
                                 title="Remove / Cancel Registration"
@@ -1181,6 +1352,26 @@ export default function AdminDashboard() {
                                 🗑️ Remove
                               </button>
                             )}
+
+                            {/* PERMANENT HARD DELETE (NO RESTORE) */}
+                            <button
+                              type="button"
+                              onClick={() => openPermanentDeleteModal(reg)}
+                              disabled={actionLoading}
+                              title="Permanently delete details in database (No restore possible)"
+                              style={{
+                                background: '#dc2626',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '6px',
+                                padding: '0.3rem 0.55rem',
+                                fontSize: '0.75rem',
+                                fontWeight: 800,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              💥 Delete
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1542,6 +1733,34 @@ export default function AdminDashboard() {
                   <div style={{ color: '#6b7280' }}>No audit logs</div>
                 )}
               </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    openPermanentDeleteModal(inspectReg);
+                  }}
+                  style={{
+                    background: '#dc2626',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '0.45rem 1rem',
+                    fontSize: '0.8rem',
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  💥 Permanently Delete in Database
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInspectReg(null)}
+                  className="btn btn-ghost btn-sm"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1735,6 +1954,233 @@ export default function AdminDashboard() {
                   style={{ fontWeight: 700 }}
                 >
                   {actionLoading ? 'Flagging...' : 'Confirm Flag'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =====================================================
+            PERMANENT DELETE REGISTRATION MODAL (NO RESTORE)
+           ===================================================== */}
+        {permanentDeleteModalOpen && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'rgba(0,0,0,0.85)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1200,
+            padding: '1rem'
+          }}>
+            <div style={{
+              background: '#11111a',
+              border: '2px solid #ef4444',
+              borderRadius: '16px',
+              maxWidth: '520px',
+              width: '100%',
+              padding: '2rem',
+              boxShadow: '0 25px 70px rgba(239, 68, 68, 0.35)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
+                <span style={{ fontSize: '2rem' }}>💥</span>
+                <h3 style={{ color: '#ef4444', fontSize: '1.3rem', margin: 0, fontFamily: 'var(--font-heading)', fontWeight: 900 }}>
+                  Permanent Delete in Database
+                </h3>
+              </div>
+
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid #ef4444',
+                borderRadius: '8px',
+                padding: '0.85rem 1rem',
+                color: '#fca5a5',
+                fontSize: '0.85rem',
+                lineHeight: 1.5,
+                marginBottom: '1.25rem'
+              }}>
+                <strong>⚠️ IRREVERSIBLE ACTION:</strong> This will permanently delete this registration, associated tickets, payment sessions, and UTR submissions from the database. <strong>There is NO restore possible.</strong>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                <label className="form-label" style={{ color: '#f3f4f6', fontWeight: 700 }}>
+                  Registration ID to Permanently Delete:
+                </label>
+                <input
+                  type="text"
+                  value={permanentDeleteInputId}
+                  onChange={(e) => setPermanentDeleteInputId(e.target.value)}
+                  placeholder="e.g. SPH-20261024-XXXXXX"
+                  className="form-input"
+                  style={{ background: '#0a0a0f', fontFamily: 'monospace', fontSize: '0.95rem' }}
+                />
+              </div>
+
+              {permanentDeleteTarget?.full_name && (
+                <div style={{ background: '#0a0a0f', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
+                  <div style={{ color: '#9ca3af' }}>Name: <strong style={{ color: '#fff' }}>{permanentDeleteTarget.full_name}</strong></div>
+                  <div style={{ color: '#9ca3af' }}>Phone: <span style={{ color: '#d1d5db' }}>{permanentDeleteTarget.phone}</span></div>
+                  {permanentDeleteTarget.utr_reference && (
+                    <div style={{ color: '#9ca3af' }}>UTR: <span style={{ color: '#fbbf24', fontFamily: 'monospace' }}>{permanentDeleteTarget.utr_reference}</span></div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPermanentDeleteModalOpen(false);
+                    setPermanentDeleteTarget(null);
+                  }}
+                  className="btn btn-ghost btn-sm"
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecutePermanentDelete}
+                  disabled={actionLoading || !permanentDeleteInputId.trim()}
+                  className="btn btn-danger btn-sm"
+                  style={{
+                    background: '#dc2626',
+                    color: '#fff',
+                    fontFamily: 'var(--font-heading)',
+                    fontWeight: 800,
+                    padding: '0.55rem 1.25rem'
+                  }}
+                >
+                  {actionLoading ? 'Deleting...' : '💥 Permanently Delete (No Restore)'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =====================================================
+            DELETE ALL REGISTRATIONS MODAL (WIPE DB - NO RESTORE)
+           ===================================================== */}
+        {deleteAllModalOpen && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'rgba(0,0,0,0.9)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1300,
+            padding: '1rem'
+          }}>
+            <div style={{
+              background: '#0e0b12',
+              border: '3px solid #dc2626',
+              borderRadius: '16px',
+              maxWidth: '560px',
+              width: '100%',
+              padding: '2.25rem',
+              boxShadow: '0 0 80px rgba(220, 38, 38, 0.5)'
+            }}>
+              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                <span style={{ fontSize: '3rem', display: 'block', marginBottom: '0.5rem' }}>🚨</span>
+                <h2 style={{
+                  color: '#ef4444',
+                  fontSize: '1.45rem',
+                  margin: 0,
+                  fontFamily: 'var(--font-heading)',
+                  fontWeight: 900,
+                  letterSpacing: '1px',
+                  textTransform: 'uppercase'
+                }}>
+                  Permanent Database Purge: Delete All
+                </h2>
+                <div style={{ color: '#f87171', fontWeight: 800, fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                  ALL REGISTRATIONS, TICKETS &amp; PAYMENTS WILL BE DESTROYED
+                </div>
+              </div>
+
+              <div style={{
+                background: 'rgba(220, 38, 38, 0.15)',
+                border: '1px solid #dc2626',
+                borderRadius: '8px',
+                padding: '1rem',
+                color: '#fca5a5',
+                fontSize: '0.88rem',
+                lineHeight: 1.5,
+                marginBottom: '1.5rem'
+              }}>
+                <p style={{ margin: '0 0 0.5rem', fontWeight: 700 }}>
+                  ⚠️ This action will permanently erase:
+                </p>
+                <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                  <li>All attendee registrations</li>
+                  <li>All payment reference submissions &amp; sessions</li>
+                  <li>All issued tickets &amp; QR access codes</li>
+                </ul>
+                <p style={{ margin: '0.75rem 0 0', fontWeight: 800, color: '#f87171' }}>
+                  There is NO RESTORE possible after this action.
+                </p>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                <label className="form-label" style={{ color: '#f3f4f6', fontSize: '0.88rem', fontWeight: 700 }}>
+                  To confirm permanent deletion of all data, type <strong style={{ color: '#ef4444' }}>DELETE ALL</strong> below:
+                </label>
+                <input
+                  type="text"
+                  value={deleteAllConfirmation}
+                  onChange={(e) => setDeleteAllConfirmation(e.target.value)}
+                  placeholder="DELETE ALL"
+                  className="form-input"
+                  style={{
+                    background: '#000',
+                    border: '2px solid #dc2626',
+                    color: '#fff',
+                    fontWeight: 900,
+                    letterSpacing: '2px',
+                    textAlign: 'center',
+                    fontSize: '1.05rem',
+                    textTransform: 'uppercase'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteAllModalOpen(false);
+                    setDeleteAllConfirmation('');
+                  }}
+                  className="btn btn-ghost btn-sm"
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteDeleteAll}
+                  disabled={actionLoading || deleteAllConfirmation.trim() !== 'DELETE ALL'}
+                  className="btn btn-danger btn-sm"
+                  style={{
+                    background: 'linear-gradient(135deg, #dc2626, #7f1d1d)',
+                    color: '#fff',
+                    fontFamily: 'var(--font-heading)',
+                    fontWeight: 900,
+                    padding: '0.65rem 1.5rem',
+                    boxShadow: '0 0 20px rgba(220, 38, 38, 0.4)'
+                  }}
+                >
+                  {actionLoading ? 'Purging Database...' : '💥 Confirm Delete All (Wipe Database)'}
                 </button>
               </div>
             </div>

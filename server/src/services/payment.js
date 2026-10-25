@@ -175,12 +175,14 @@ class PaymentService {
       }
 
       // Check for duplicate UTR across non-rejected submissions
-      const { data: existingUTR } = await supabase
+      const { data: existingUTRs } = await supabase
         .from('payment_submissions')
-        .select('registration_id, status')
+        .select('registration_id, status, utr_reference')
         .eq('utr_normalized', normalized)
         .neq('status', 'REJECTED')
-        .maybeSingle();
+        .limit(1);
+
+      const existingUTR = existingUTRs?.[0];
 
       if (existingUTR) {
         await supabase.from('admin_audit_log').insert({
@@ -353,6 +355,29 @@ class PaymentService {
         .maybeSingle();
 
       if (existingTicket) throw new Error('Ticket already issued for this registration');
+
+      // Check for cloned / duplicate approved UTR
+      const { data: subData } = await supabase
+        .from('payment_submissions')
+        .select('utr_normalized, utr_reference')
+        .eq('registration_id', registrationId)
+        .order('submitted_at', { ascending: false })
+        .limit(1);
+
+      if (subData && subData.length > 0) {
+        const utrToApprove = subData[0].utr_normalized;
+        const { data: duplicateApproved } = await supabase
+          .from('payment_submissions')
+          .select('registration_id')
+          .eq('utr_normalized', utrToApprove)
+          .eq('status', 'APPROVED')
+          .neq('registration_id', registrationId)
+          .limit(1);
+
+        if (duplicateApproved && duplicateApproved.length > 0) {
+          throw new Error(`Cannot approve: UTR ${subData[0].utr_reference} has already been approved for registration ${duplicateApproved[0].registration_id}. Duplicate or cloned UTR payments cannot be approved.`);
+        }
+      }
 
       // Generate ticket number with retry protection against collisions
       const isUUID = typeof adminId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(adminId);

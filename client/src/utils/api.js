@@ -78,6 +78,10 @@ export const api = {
 
   adminRestore: (id) => request(`/admin/restore/${id}`, { method: 'POST' }),
 
+  adminPermanentDelete: (id) => request(`/admin/permanent-delete/${id}`, { method: 'POST' }),
+
+  adminDeleteAll: (confirmation) => request('/admin/delete-all', { method: 'POST', body: { confirmation } }),
+
   adminExport: (params = {}) => {
     const queryString = new URLSearchParams(
       Object.fromEntries(Object.entries(params).filter(([_, v]) => v != null && v !== ''))
